@@ -1,0 +1,15 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../ViennaVulkanEngine"
+		}
+	],
+	"settings": {
+		"cmake.sourceDirectory": "${workspaceFolder:game}",
+		"C_Cpp.default.compileCommands": "${workspaceFolder:game}/out/build/Game/compile_commands.json",
+		"C_Cpp.intelliSenseEngine": "default"
+	}
+}
