@@ -26,8 +26,8 @@ target_link_libraries (${TARGET} PUBLIC viennavulkanengine)
 
 # if(APPLE)
 #     add_custom_command(TARGET ${TARGET} POST_BUILD
-#         COMMAND ${CMAKE_COMMAND} -E create_symlink "${ENGINE_DIR}/shaders" "$<TARGET_FILE_DIR:${TARGET}>/shaders"
-#         COMMAND ${CMAKE_COMMAND} -E create_symlink "${ENGINE_DIR}/assets" "$<TARGET_FILE_DIR:${TARGET}>/assets"
+#         COMMAND ${CMAKE_COMMAND} -E create_symlink "${CMAKE_SOURCE_DIR}/shaders" "$<TARGET_FILE_DIR:${TARGET}>/shaders"
+#         COMMAND ${CMAKE_COMMAND} -E create_symlink "${CMAKE_SOURCE_DIR}/assets" "$<TARGET_FILE_DIR:${TARGET}>/assets"
 #     )
 # endif()
 

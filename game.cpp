@@ -40,12 +40,14 @@ public:
     };
   }
 
-  inline static std::string plane_obj{"assets/test/plane/plane_t_n_s.obj"};
+  inline static std::string plane_obj{
+      "assets/test/cobblestone/Stone_ground_01.obj"};
   inline static std::string plane_mesh{
-      "assets/test/plane/plane_t_n_s.obj/plane"};
-  inline static std::string plane_txt{"assets/test/plane/grass.jpg"};
+      "assets/test/cobblestone/Stone_ground_01.obj/default"};
+  inline static std::string plane_txt{
+      "assets/test/cobblestone/Stone_ground_01_u1_v1.jpg"};
 
-  inline static std::string cube_obj{"assets/test/crate0/cube.obj"};
+  inline static std::string cube_obj{"assets/test/box/Rock1.obj"};
 
   bool OnLoadLevel(Message message) {
     auto msg = message.template GetData<vve::System::MsgLoadLevel>();
@@ -54,23 +56,20 @@ public:
 
     // ----------------- Load Plane -----------------
 
-    m_engine.LoadScene(vve::Filename{plane_obj}, aiProcess_FlipWindingOrder);
-
-    m_engine.CreateObject(
-        vve::Name{}, vve::ParentHandle{}, vve::MeshName{plane_mesh},
-        vve::TextureName{plane_txt}, vve::Position{vec3_t{0.0f, 0.0f, 0.0f}},
-        vve::Rotation{mat4_t{glm::rotate(glm::mat4(1.0f), 3.14152f / 2.0f,
-                                         glm::vec3(1.0f, 0.0f, 0.0f))}},
-        vve::Scale{vec3_t{1000.0f, 1000.0f, 1000.0f}},
-        vve::UVScale{vec2_t{1000.0f, 1000.0f}});
+    m_engine.CreateScene(
+        vve::Name{}, vve::ParentHandle{}, vve::Filename{plane_obj},
+        aiProcess_Triangulate, vve::Position{vec3_t{0.0f, 0.0f, -0.5f}},
+        vve::Rotation{mat4_t{1.0f}}, vve::Scale{vec3_t{2.0f, 2.0f, 2.0f}});
 
     // ----------------- Load Cube -----------------
 
     m_handleCube = m_engine.CreateScene(
         vve::Name{}, vve::ParentHandle{}, vve::Filename{cube_obj},
-        aiProcess_FlipWindingOrder,
-        vve::Position{{nextRandom(), nextRandom(), 0.5f}},
-        vve::Rotation{mat3_t{1.0f}}, vve::Scale{vec3_t{1.0f}});
+        aiProcess_Triangulate,
+        vve::Position{vec3_t{c_field_size / 4.0f, c_field_size / 2.0f, 0.5f}},
+        vve::Rotation{mat3_t{
+            glm::rotate(mat4_t{1.0f}, 1.57079f, vec3_t{1.0f, 0.0f, 0.0f})}},
+        vve::Scale{vec3_t{1.0f}});
 
     GetCamera();
     m_registry.Get<vve::Rotation &>(m_cameraHandle)() = mat3_t{
@@ -97,18 +96,19 @@ public:
       auto posCube = m_registry.Get<vve::Position &>(m_handleCube);
       float distance = glm::length(vec2_t{pos().x, pos().y} -
                                    vec2_t{posCube().x, posCube().y});
-      if (distance < 1.5f) {
-        m_cubes_left--;
-        posCube().x = static_cast<float>(nextRandom());
-        posCube().y = static_cast<float>(nextRandom());
-        if (m_cubes_left == 0) {
-          m_time_left += 20;
-          m_cubes_left = c_number_cubes;
-          m_engine.PlaySound(vve::Filename{"assets/sounds/bell.wav"}, 1);
-        } else {
-          m_engine.PlaySound(vve::Filename{"assets/sounds/explosion.wav"}, 1);
-        }
-      }
+      // if (distance < 1.5f) {
+      //   m_cubes_left--;
+      //   posCube().x = static_cast<float>(nextRandom());
+      //   posCube().y = static_cast<float>(nextRandom());
+      //   if (m_cubes_left == 0) {
+      //     m_time_left += 20;
+      //     m_cubes_left = c_number_cubes;
+      //     m_engine.PlaySound(vve::Filename{"assets/sounds/bell.wav"}, 1);
+      //   } else {
+      //     m_engine.PlaySound(vve::Filename{"assets/sounds/explosion.wav"},
+      //     1);
+      //   }
+      // }
     }
 
     return false;
@@ -119,21 +119,18 @@ public:
     ImGuiIO &io = ImGui::GetIO();
     const float margin = 10.0f;
     const float btnW = 36.0f, btnH = 28.0f;
-    ImGui::SetNextWindowPos(
-        ImVec2(io.DisplaySize.x - btnW - margin, margin),
-        ImGuiCond_Always);
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - btnW - margin, margin),
+                            ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(btnW + 4.0f, btnH + 4.0f),
                              ImGuiCond_Always);
     ImGui::SetNextWindowBgAlpha(0.0f);
-    ImGui::Begin("##settings_btn",
-                 nullptr,
-                 ImGuiWindowFlags_NoDecoration |
-                 ImGuiWindowFlags_NoInputs * 0 |
-                 ImGuiWindowFlags_NoNav |
-                 ImGuiWindowFlags_NoMove |
-                 ImGuiWindowFlags_NoSavedSettings |
-                 ImGuiWindowFlags_NoBringToFrontOnFocus);
-    if (ImGui::Button(u8"\u2699", ImVec2(btnW, btnH)))
+    ImGui::Begin("##settings_btn", nullptr,
+                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs * 0 |
+                     ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove |
+                     ImGuiWindowFlags_NoSavedSettings |
+                     ImGuiWindowFlags_NoBringToFrontOnFocus);
+    if (ImGui::Button(reinterpret_cast<const char *>(u8"\u2699"),
+                      ImVec2(btnW, btnH)))
       m_show_settings = !m_show_settings;
     ImGui::End();
 
@@ -143,11 +140,9 @@ public:
           ImVec2(io.DisplaySize.x - 160.0f - margin, margin + btnH + 6.0f),
           ImGuiCond_Always);
       ImGui::SetNextWindowSize(ImVec2(160.0f, 60.0f), ImGuiCond_Always);
-      ImGui::Begin("Settings",
-                   &m_show_settings,
-                   ImGuiWindowFlags_NoResize |
-                   ImGuiWindowFlags_NoMove |
-                   ImGuiWindowFlags_NoSavedSettings);
+      ImGui::Begin("Settings", &m_show_settings,
+                   ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                       ImGuiWindowFlags_NoSavedSettings);
       if (ImGui::Button("Exit", ImVec2(-1.0f, 0.0f)))
         exit(0);
       ImGui::End();
