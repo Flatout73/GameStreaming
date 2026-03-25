@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.15)
 project(MyGame)
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 set(ENGINE_DIR "/Users/flatout/Documents/UniVien/CloudGaming/ViennaVulkanEngine")
 link_directories("/Users/flatout/VulkanSDK/1.4.341.1/macOS/lib")
 add_subdirectory(${ENGINE_DIR} ViennaVulkanEngine_build)

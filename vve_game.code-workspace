@@ -1,15 +1,25 @@
 {
 	"folders": [
 		{
+			"name": "game",
 			"path": "."
 		},
 		{
+			"name": "ViennaVulkanEngine",
 			"path": "../ViennaVulkanEngine"
 		}
 	],
 	"settings": {
 		"cmake.sourceDirectory": "${workspaceFolder:game}",
+		"C_Cpp.default.compilerPath": "/usr/bin/clang++",
 		"C_Cpp.default.compileCommands": "${workspaceFolder:game}/out/build/Game/compile_commands.json",
+		"C_Cpp.default.includePath": [
+			"${workspaceFolder:game}/**",
+			"${workspaceFolder:ViennaVulkanEngine}/include/**",
+			"/Users/flatout/VulkanSDK/1.4.341.1/macOS/include/**",
+			"${workspaceFolder:game}/out/build/Game/_deps/**/include",
+			"${workspaceFolder:game}/out/build/Game/_deps/**/src"
+		],
 		"C_Cpp.intelliSenseEngine": "default"
 	}
 }

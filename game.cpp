@@ -58,7 +58,7 @@ public:
 
     m_engine.CreateScene(
         vve::Name{}, vve::ParentHandle{}, vve::Filename{plane_obj},
-        aiProcess_Triangulate, vve::Position{vec3_t{0.0f, 0.0f, -0.5f}},
+        aiProcess_Triangulate, vve::Position{vec3_t{0.0f, 0.0f, -0.7f}},
         vve::Rotation{mat4_t{1.0f}}, vve::Scale{vec3_t{2.0f, 2.0f, 2.0f}});
 
     // ----------------- Load Cube -----------------
@@ -118,7 +118,7 @@ public:
     // ---- Settings button in the upper-right corner ----
     ImGuiIO &io = ImGui::GetIO();
     const float margin = 10.0f;
-    const float btnW = 36.0f, btnH = 28.0f;
+    const float btnW = 80.0f, btnH = 28.0f;
     ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - btnW - margin, margin),
                             ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(btnW + 4.0f, btnH + 4.0f),
@@ -129,8 +129,7 @@ public:
                      ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove |
                      ImGuiWindowFlags_NoSavedSettings |
                      ImGuiWindowFlags_NoBringToFrontOnFocus);
-    if (ImGui::Button(reinterpret_cast<const char *>(u8"\u2699"),
-                      ImVec2(btnW, btnH)))
+    if (ImGui::Button("Settings", ImVec2(btnW, btnH)))
       m_show_settings = !m_show_settings;
     ImGui::End();
 
