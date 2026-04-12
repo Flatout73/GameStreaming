@@ -234,8 +234,12 @@ private:
 
   static constexpr int c_fps = 30;
   static constexpr int64_t c_bitrate = 2000000;
+  static constexpr int64_t c_reducedBitrate = 500000;
+  static constexpr int c_bitrateSwitchFrame = 5 * 30; // Switch after 5 seconds
   static constexpr const char *c_outputH264 = "output.h264";
   static constexpr const char *c_outputMP4 = "output.mp4";
+
+  bool m_bitrateReduced{false};
 
   // ---- Lazy-init the encoder once we know the resolution ----
   bool InitEncoder(int width, int height) {
@@ -302,11 +306,10 @@ private:
     auto vstate = std::get<1>(vve::Renderer::GetState(m_registry));
     auto wstate = std::get<1>(vve::Window::GetState(m_registry, m_windowName));
 
-    VkExtent2D extent = {(uint32_t)wstate().m_width,
-                         (uint32_t)wstate().m_height};
+    // Use swapChainExtent for physical pixel resolution instead of logical window size (fixes High DPI / Retina scaling)
+    VkExtent2D extent = vstate().m_swapChain.m_swapChainExtent;
     uint32_t imageSize = extent.width * extent.height * 4; // RGBA
-    VkImage image =
-        vstate().m_swapChain.m_swapChainImages[vstate().m_imageIndex];
+    VkImage image = vstate().m_swapChain.m_swapChainImages[vstate().m_imageIndex];
 
     // Lazy-init on first frame (now we know the resolution)
     if (!m_initialized) {
@@ -324,23 +327,71 @@ private:
         3 // channel swap indices r,g,b,a
     });
 
-    // 3. Convert RGBA -> YUV420P (Store pattern)
-    const uint8_t *srcSlice[1] = {dataImage};
-    int srcStride[1] = {(int)(extent.width * 4)};
-    sws_scale(m_swsCtx, srcSlice, srcStride, 0, extent.height, m_yuvFrame->data,
-              m_yuvFrame->linesize);
+    // 3. Wrap the raw Vulkan image in an RGB AVFrame (Store pattern)
+    AVFrame *rgbFrame = av_frame_alloc();
+    rgbFrame->format = AV_PIX_FMT_RGBA;
+    rgbFrame->width = extent.width;
+    rgbFrame->height = extent.height;
+    
+    // Wire up the rgbFrame's data array to point to our captured pixels
+    av_image_fill_arrays(rgbFrame->data, rgbFrame->linesize, dataImage,
+                         AV_PIX_FMT_RGBA, extent.width, extent.height, 1);
 
-    m_yuvFrame->pts = m_frameIndex++;
+    // Convert RGBA AVFrame -> YUV420P AVFrame (Store pattern)
+    sws_scale(m_swsCtx, rgbFrame->data, rgbFrame->linesize, 0, extent.height, 
+              m_yuvFrame->data, m_yuvFrame->linesize);
 
-    // 4. Encode (Store pattern)
-    if (avcodec_send_frame(m_codecCtx, m_yuvFrame) >= 0) {
+    m_yuvFrame->pts = m_frameIndex; // Store pattern uses raw index for YUV pts
+
+    // 4. Encode (Store pattern with Bitrate Switching)
+    if (avcodec_send_frame(m_codecCtx, m_yuvFrame) < 0) {
+      std::cerr << "Error sending frame to codec" << std::endl;
+      av_frame_free(&rgbFrame); // Free the wrapper
+      delete[] dataImage;
+      return false;
+    }
+
+    if (!m_bitrateReduced && m_frameIndex >= c_bitrateSwitchFrame) {
+      // Flush original codec context (Store pattern)
+      avcodec_send_frame(m_codecCtx, nullptr);
       while (avcodec_receive_packet(m_codecCtx, m_pkt) == 0) {
-        m_outFile.write(reinterpret_cast<const char *>(m_pkt->data),
-                        m_pkt->size);
+        m_pkt->pts = m_pkt->dts = m_pkt->pts * m_codecCtx->time_base.den / m_codecCtx->time_base.num;
+        m_outFile.write(reinterpret_cast<const char *>(m_pkt->data), m_pkt->size);
         av_packet_unref(m_pkt);
+      }
+      
+      avcodec_free_context(&m_codecCtx);
+      m_codecCtx = avcodec_alloc_context3(m_codec);
+      if (!m_codecCtx) {
+        std::cerr << "FrameEncoder: Could not allocate replacement codec context" << std::endl;
+      } else {
+        m_codecCtx->bit_rate = c_reducedBitrate;
+        m_codecCtx->width = extent.width;
+        m_codecCtx->height = extent.height;
+        m_codecCtx->time_base = {1, c_fps};
+        m_codecCtx->framerate = {c_fps, 1};
+        m_codecCtx->gop_size = 10;
+        m_codecCtx->max_b_frames = 1;
+        m_codecCtx->pix_fmt = AV_PIX_FMT_YUV420P;
+
+        if (avcodec_open2(m_codecCtx, m_codec, nullptr) < 0) {
+          std::cerr << "FrameEncoder: Could not reopen codec after bitrate switch" << std::endl;
+          avcodec_free_context(&m_codecCtx);
+        } else {
+          m_bitrateReduced = true;
+          std::cout << "FrameEncoder: Switched bitrate to " << c_reducedBitrate << " at frame " << m_frameIndex << std::endl;
+        }
       }
     }
 
+    while (avcodec_receive_packet(m_codecCtx, m_pkt) == 0) {
+      m_pkt->pts = m_pkt->dts = m_yuvFrame->pts * m_codecCtx->time_base.den / m_codecCtx->time_base.num;
+      m_outFile.write(reinterpret_cast<const char *>(m_pkt->data), m_pkt->size);
+      av_packet_unref(m_pkt);
+    }
+
+    m_frameIndex++;
+    av_frame_free(&rgbFrame); // Free the wrapper
     delete[] dataImage;
     return false;
   }
@@ -354,6 +405,7 @@ private:
     // Flush the encoder (Store pattern)
     avcodec_send_frame(m_codecCtx, nullptr);
     while (avcodec_receive_packet(m_codecCtx, m_pkt) == 0) {
+      m_pkt->pts = m_pkt->dts = m_pkt->pts * m_codecCtx->time_base.den / m_codecCtx->time_base.num;
       m_outFile.write(reinterpret_cast<const char *>(m_pkt->data), m_pkt->size);
       av_packet_unref(m_pkt);
     }
