@@ -233,9 +233,9 @@ private:
   std::string m_windowName;
 
   static constexpr int c_fps = 30;
-  static constexpr int64_t c_bitrate = 2000000;
+  static constexpr int64_t c_bitrate = 20000000; // 20 Mbps for master source
   static constexpr int64_t c_reducedBitrate = 500000;
-  static constexpr int c_bitrateSwitchFrame = 5 * 30; // Switch after 5 seconds
+  static constexpr int c_bitrateSwitchFrame = 999999; // Disabled for master source file generation
   static constexpr const char *c_outputH264 = "output.h264";
   static constexpr const char *c_outputMP4 = "output.mp4";
 
