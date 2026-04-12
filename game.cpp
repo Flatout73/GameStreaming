@@ -1,7 +1,16 @@
 
+extern "C" {
+#include <libavcodec/avcodec.h>
+#include <libavutil/imgutils.h>
+#include <libavutil/opt.h>
+#include <libswscale/swscale.h>
+}
+
 #include "VEInclude.h"
 #include "VHInclude.h"
+#include <cstdlib>
 #include <format>
+#include <fstream>
 #include <iostream>
 #include <utility>
 
@@ -186,9 +195,198 @@ private:
   bool m_show_settings{false};
 };
 
+// ---------------------------------------------------------------------------
+// FrameEncoder – captures every rendered frame and encodes it to H.264
+// Follows the pattern from VEGUI.cpp (frame capture) and Store (FFmpeg encode)
+// ---------------------------------------------------------------------------
+class FrameEncoder : public vve::System {
+public:
+  FrameEncoder(vve::Engine &engine, std::string windowName = "")
+      : vve::System("FrameEncoder", engine),
+        m_windowName(std::move(windowName)) {
+
+    // --- Find the H.264 encoder ---
+    m_codec = avcodec_find_encoder(AV_CODEC_ID_H264);
+    if (!m_codec) {
+      std::cerr << "FrameEncoder: H.264 codec not found" << std::endl;
+      return;
+    }
+
+    // --- Register for FRAME_END (like VEGUI.cpp) ---
+    m_engine.RegisterCallbacks(
+        {{this, 0, "FRAME_END",
+          [this](Message &message) { return OnFrameEnd(message); }}});
+  }
+
+  ~FrameEncoder() { Shutdown(); }
+
+private:
+  // ---- Encoder state ----
+  const AVCodec *m_codec{nullptr};
+  AVCodecContext *m_codecCtx{nullptr};
+  AVPacket *m_pkt{nullptr};
+  AVFrame *m_yuvFrame{nullptr};
+  SwsContext *m_swsCtx{nullptr};
+  std::ofstream m_outFile;
+  bool m_initialized{false};
+  int64_t m_frameIndex{0};
+  std::string m_windowName;
+
+  static constexpr int c_fps = 30;
+  static constexpr int64_t c_bitrate = 2000000;
+  static constexpr const char *c_outputH264 = "output.h264";
+  static constexpr const char *c_outputMP4 = "output.mp4";
+
+  // ---- Lazy-init the encoder once we know the resolution ----
+  bool InitEncoder(int width, int height) {
+    m_codecCtx = avcodec_alloc_context3(m_codec);
+    if (!m_codecCtx) {
+      std::cerr << "FrameEncoder: could not allocate codec context"
+                << std::endl;
+      return false;
+    }
+
+    m_codecCtx->bit_rate = c_bitrate;
+    m_codecCtx->width = width;
+    m_codecCtx->height = height;
+    m_codecCtx->time_base = {1, c_fps};
+    m_codecCtx->framerate = {c_fps, 1};
+    m_codecCtx->gop_size = 10;
+    m_codecCtx->max_b_frames = 1;
+    m_codecCtx->pix_fmt = AV_PIX_FMT_YUV420P;
+
+    if (avcodec_open2(m_codecCtx, m_codec, nullptr) < 0) {
+      std::cerr << "FrameEncoder: could not open codec" << std::endl;
+      avcodec_free_context(&m_codecCtx);
+      return false;
+    }
+
+    m_outFile.open(c_outputH264, std::ios::binary);
+    if (!m_outFile) {
+      std::cerr << "FrameEncoder: could not open output file" << std::endl;
+      avcodec_free_context(&m_codecCtx);
+      return false;
+    }
+
+    m_pkt = av_packet_alloc();
+
+    // Pre-allocate the reusable YUV frame
+    m_yuvFrame = av_frame_alloc();
+    m_yuvFrame->format = AV_PIX_FMT_YUV420P;
+    m_yuvFrame->width = width;
+    m_yuvFrame->height = height;
+    av_image_alloc(m_yuvFrame->data, m_yuvFrame->linesize, width, height,
+                   AV_PIX_FMT_YUV420P, 32);
+
+    // SWS context: RGBA (from Vulkan) -> YUV420P
+    m_swsCtx = sws_getContext(width, height, AV_PIX_FMT_RGBA, width, height,
+                              AV_PIX_FMT_YUV420P, SWS_BILINEAR, nullptr,
+                              nullptr, nullptr);
+    if (!m_swsCtx) {
+      std::cerr << "FrameEncoder: could not create SwsContext" << std::endl;
+      return false;
+    }
+
+    m_initialized = true;
+    std::cout << "FrameEncoder: initialized " << width << "x" << height
+              << std::endl;
+    return true;
+  }
+
+  // ---- Called every frame after rendering (like VEGUI::OnFrameEnd) ----
+  bool OnFrameEnd(Message message) {
+    if (!m_codec)
+      return false;
+
+    // 1. Get Vulkan + Window state (same as VEGUI.cpp)
+    auto vstate = std::get<1>(vve::Renderer::GetState(m_registry));
+    auto wstate = std::get<1>(vve::Window::GetState(m_registry, m_windowName));
+
+    VkExtent2D extent = {(uint32_t)wstate().m_width,
+                         (uint32_t)wstate().m_height};
+    uint32_t imageSize = extent.width * extent.height * 4; // RGBA
+    VkImage image =
+        vstate().m_swapChain.m_swapChainImages[vstate().m_imageIndex];
+
+    // Lazy-init on first frame (now we know the resolution)
+    if (!m_initialized) {
+      if (!InitEncoder(extent.width, extent.height))
+        return false;
+    }
+
+    // 2. Copy the swapchain image to host memory (same as VEGUI.cpp)
+    uint8_t *dataImage = new uint8_t[imageSize];
+    vvh::ImgCopyImageToHost({
+        vstate().m_device, vstate().m_vmaAllocator, vstate().m_graphicsQueue,
+        vstate().m_commandPool, image, VK_FORMAT_R8G8B8A8_UNORM,
+        VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, dataImage,
+        extent.width, extent.height, imageSize, 2, 1, 0,
+        3 // channel swap indices r,g,b,a
+    });
+
+    // 3. Convert RGBA -> YUV420P (Store pattern)
+    const uint8_t *srcSlice[1] = {dataImage};
+    int srcStride[1] = {(int)(extent.width * 4)};
+    sws_scale(m_swsCtx, srcSlice, srcStride, 0, extent.height, m_yuvFrame->data,
+              m_yuvFrame->linesize);
+
+    m_yuvFrame->pts = m_frameIndex++;
+
+    // 4. Encode (Store pattern)
+    if (avcodec_send_frame(m_codecCtx, m_yuvFrame) >= 0) {
+      while (avcodec_receive_packet(m_codecCtx, m_pkt) == 0) {
+        m_outFile.write(reinterpret_cast<const char *>(m_pkt->data),
+                        m_pkt->size);
+        av_packet_unref(m_pkt);
+      }
+    }
+
+    delete[] dataImage;
+    return false;
+  }
+
+  // ---- Flush encoder, close file, convert to MP4 ----
+  void Shutdown() {
+    if (!m_initialized)
+      return;
+    m_initialized = false;
+
+    // Flush the encoder (Store pattern)
+    avcodec_send_frame(m_codecCtx, nullptr);
+    while (avcodec_receive_packet(m_codecCtx, m_pkt) == 0) {
+      m_outFile.write(reinterpret_cast<const char *>(m_pkt->data), m_pkt->size);
+      av_packet_unref(m_pkt);
+    }
+
+    m_outFile.close();
+
+    // Clean up FFmpeg resources
+    av_packet_free(&m_pkt);
+    if (m_yuvFrame) {
+      av_freep(&m_yuvFrame->data[0]);
+      av_frame_free(&m_yuvFrame);
+    }
+    avcodec_free_context(&m_codecCtx);
+    sws_freeContext(m_swsCtx);
+    m_swsCtx = nullptr;
+
+    std::cout << "FrameEncoder: encoded " << m_frameIndex << " frames to "
+              << c_outputH264 << std::endl;
+
+    // Convert elementary stream to MP4 (Store example: ffmpeg -i output.h264 -c
+    // copy output.mp4)
+    std::string cmd = std::string("/opt/homebrew/bin/ffmpeg -y -i ") +
+                      c_outputH264 + " -c copy " + c_outputMP4;
+    std::cout << "FrameEncoder: running: " << cmd << std::endl;
+    std::system(cmd.c_str());
+    std::cout << "FrameEncoder: created " << c_outputMP4 << std::endl;
+  }
+};
+
 int main() {
   vve::Engine engine("My Engine", vve::RendererType::RENDERER_TYPE_FORWARD);
   MyGame mygui{engine};
+  FrameEncoder encoder{engine};
   engine.Run();
 
   return 0;
