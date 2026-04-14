@@ -28,7 +28,7 @@ if(MSVC)
     set_property(TARGET ${TARGET} PROPERTY VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 endif()
 
-target_link_libraries (${TARGET} PUBLIC viennavulkanengine avcodec avutil swscale)
+target_link_libraries (${TARGET} PUBLIC viennavulkanengine avformat avcodec avutil swscale)
 
 # if(APPLE)
 #     add_custom_command(TARGET ${TARGET} POST_BUILD

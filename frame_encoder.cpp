@@ -266,7 +266,7 @@ private:
                              ? " -tag:v hvc1 "
                              : " ";
     std::string cmd = std::string("/opt/homebrew/bin/ffmpeg -y -i ") +
-                      startFile + " -c copy" + tagCmd + endFile;
+                      startFile + " -c:v copy -bsf:v dts2pts -c:a copy" + tagCmd + endFile;
     std::cout << "FrameEncoder: running: " << cmd << std::endl;
     std::system(cmd.c_str());
     std::cout << "FrameEncoder: created " << endFile << std::endl;
