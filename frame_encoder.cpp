@@ -1,3 +1,5 @@
+#include <string>
+
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavutil/imgutils.h>
@@ -5,10 +7,7 @@ extern "C" {
 #include <libswscale/swscale.h>
 }
 
-// ---------------------------------------------------------------------------
-// FrameEncoder – captures every rendered frame and encodes it to H.264
-// Follows the pattern from VEGUI.cpp (frame capture) and Store (FFmpeg encode)
-// ---------------------------------------------------------------------------
+// FrameEncoder – captures every rendered frame and encodes it to H.264/HEVC
 class FrameEncoder : public vve::System {
 public:
   FrameEncoder(vve::Engine &engine, std::string windowName = "")
@@ -193,8 +192,7 @@ private:
             << "FrameEncoder: Could not allocate replacement codec context"
             << std::endl;
       } else {
-        m_codecCtx->bit_rate =
-            m_bitrateVal / 2; // For dynamic testing if needed
+        m_codecCtx->bit_rate = m_bitrateVal;
         m_codecCtx->width = extent.width;
         m_codecCtx->height = extent.height;
         m_codecCtx->time_base = {1, c_fps};
@@ -266,7 +264,8 @@ private:
                              ? " -tag:v hvc1 "
                              : " ";
     std::string cmd = std::string("/opt/homebrew/bin/ffmpeg -y -i ") +
-                      startFile + " -c:v copy -bsf:v dts2pts -c:a copy" + tagCmd + endFile;
+                      startFile + " -c:v copy -bsf:v dts2pts -c:a copy" +
+                      tagCmd + endFile;
     std::cout << "FrameEncoder: running: " << cmd << std::endl;
     std::system(cmd.c_str());
     std::cout << "FrameEncoder: created " << endFile << std::endl;
