@@ -66,7 +66,6 @@ private:
 
   bool m_bitrateReduced{false};
 
-  // ---- Lazy-init the encoder once we know the resolution ----
   bool InitEncoder(int width, int height) {
     m_codecCtx = avcodec_alloc_context3(m_codec);
     if (!m_codecCtx) {
@@ -124,12 +123,10 @@ private:
     return true;
   }
 
-  // ---- Called every frame after rendering (like VEGUI::OnFrameEnd) ----
   bool OnFrameEnd(Message message) {
     if (!m_codec)
       return false;
 
-    // 1. Get Vulkan + Window state (same as VEGUI.cpp)
     auto vstate = std::get<1>(vve::Renderer::GetState(m_registry));
     auto wstate = std::get<1>(vve::Window::GetState(m_registry, m_windowName));
 
@@ -146,7 +143,7 @@ private:
         return false;
     }
 
-    // 2. Copy the swapchain image to host memory (same as VEGUI.cpp)
+    // Copy the swapchain image to host memory
     uint8_t *dataImage = new uint8_t[imageSize];
     vvh::ImgCopyImageToHost({
         vstate().m_device, vstate().m_vmaAllocator, vstate().m_graphicsQueue,
@@ -156,7 +153,6 @@ private:
         3 // channel swap indices r,g,b,a
     });
 
-    // 3. Wrap the raw Vulkan image in an RGB AVFrame (Store pattern)
     AVFrame *rgbFrame = av_frame_alloc();
     rgbFrame->format = AV_PIX_FMT_RGBA;
     rgbFrame->width = extent.width;
@@ -172,10 +168,9 @@ private:
 
     m_yuvFrame->pts = m_frameIndex; // Store pattern uses raw index for YUV pts
 
-    // 4. Encode (Store pattern with Bitrate Switching)
     if (avcodec_send_frame(m_codecCtx, m_yuvFrame) < 0) {
       std::cerr << "Error sending frame to codec" << std::endl;
-      av_frame_free(&rgbFrame); // Free the wrapper
+      av_frame_free(&rgbFrame);
       delete[] dataImage;
       return false;
     }
@@ -230,7 +225,7 @@ private:
     }
 
     m_frameIndex++;
-    av_frame_free(&rgbFrame); // Free the wrapper
+    av_frame_free(&rgbFrame);
     delete[] dataImage;
     return false;
   }
@@ -252,7 +247,6 @@ private:
 
     m_outFile.close();
 
-    // Clean up FFmpeg resources
     av_packet_free(&m_pkt);
     if (m_yuvFrame) {
       av_freep(&m_yuvFrame->data[0]);
