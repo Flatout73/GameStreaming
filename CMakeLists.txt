@@ -8,7 +8,7 @@ link_directories("/Users/flatout/VulkanSDK/1.4.341.1/macOS/lib")
 add_subdirectory(${ENGINE_DIR} ViennaVulkanEngine_build)
 
 set(TARGET vve_mygame)
-set(SOURCE game.cpp)
+set(SOURCE game.cpp udp_sender6.cpp)
 set(HEADERS )
 
 add_executable(${TARGET} ${SOURCE} ${HEADERS})
