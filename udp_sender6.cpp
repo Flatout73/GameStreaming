@@ -5,6 +5,9 @@
  *  Based on UDPSend6 example by Helmut Hlavacs (2022).
  */
 
+// Enable RFC 3542 IPv6 socket options (IPV6_DONTFRAG etc.) on macOS
+#define __APPLE_USE_RFC_3542
+
 #include "udp_sender6.h"
 
 #include <cstdio>
@@ -29,6 +32,16 @@ void UDPSender6::init(const char *address, int port) {
     perror("UDPSender6: socket creation failed");
     return;
   }
+
+  // Allow the kernel to fragment large IPv6 datagrams at the source.
+  // Without this, macOS rejects datagrams exceeding the path MTU (~16KB on
+  // loopback) with EMSGSIZE.
+  int off = 0;
+  setsockopt(sock, IPPROTO_IPV6, IPV6_DONTFRAG, &off, sizeof(off));
+
+  // Enlarge send buffer to accommodate full-size datagrams
+  int sndbuf = 256 * 1024;
+  setsockopt(sock, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
 
   struct addrinfo hints;
   memset(&addr, 0, sizeof(addr));
