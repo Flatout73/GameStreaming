@@ -26,15 +26,15 @@ public:
     const char *envUdpAddr = std::getenv("UDP_ADDR");
     const char *envUdpPort = std::getenv("UDP_PORT");
 
-    m_codecName = envCodec ? envCodec : "h264";
-    m_bitrateVal = envBitrate ? std::stoll(envBitrate) : 2000000;
+    m_codecName = envCodec ? envCodec : "hevc";
+    m_bitrateVal = envBitrate ? std::stoll(envBitrate) : 500000;
     m_outFileBase = envOut ? envOut : "output";
     m_udpAddr = envUdpAddr ? envUdpAddr : "::1";
     m_udpPort = envUdpPort ? std::stoi(envUdpPort) : 50000;
 
     // --- Frame duration for rate limiting ---
-    m_frameDuration = std::chrono::nanoseconds(
-        std::chrono::seconds(1)) / c_target_fps;
+    m_frameDuration =
+        std::chrono::nanoseconds(std::chrono::seconds(1)) / c_target_fps;
 
     // --- Find the encoder ---
     if (m_codecName == "hevc" || m_codecName == "h265") {
@@ -109,6 +109,10 @@ private:
     m_codecCtx->max_b_frames = 1;
     m_codecCtx->pix_fmt = AV_PIX_FMT_YUV420P;
 
+    // Apply low-latency presets to keep NAL units small for UDP
+    // av_opt_set(m_codecCtx->priv_data, "preset", "ultrafast", 0);
+    // av_opt_set(m_codecCtx->priv_data, "tune", "zerolatency", 0);
+
     if (avcodec_open2(m_codecCtx, m_codec, nullptr) < 0) {
       std::cerr << "FrameEncoder: could not open codec" << std::endl;
       avcodec_free_context(&m_codecCtx);
@@ -145,8 +149,8 @@ private:
 
     m_initialized = true;
     std::cout << "FrameEncoder: initialized " << width << "x" << height
-              << " → streaming to [" << m_udpAddr << "]:" << m_udpPort
-              << " @ " << c_target_fps << " fps" << std::endl;
+              << " → streaming to [" << m_udpAddr << "]:" << m_udpPort << " @ "
+              << c_target_fps << " fps" << std::endl;
     return true;
   }
 
@@ -241,9 +245,12 @@ private:
         m_codecCtx->height = extent.height;
         m_codecCtx->time_base = {1, c_fps};
         m_codecCtx->framerate = {c_fps, 1};
-        m_codecCtx->gop_size = 10;
-        m_codecCtx->max_b_frames = 1;
+        m_codecCtx->gop_size = 30;
+        m_codecCtx->max_b_frames = 0;
         m_codecCtx->pix_fmt = AV_PIX_FMT_YUV420P;
+
+        // av_opt_set(m_codecCtx->priv_data, "preset", "ultrafast", 0);
+        // av_opt_set(m_codecCtx->priv_data, "tune", "zerolatency", 0);
 
         if (avcodec_open2(m_codecCtx, m_codec, nullptr) < 0) {
           std::cerr
