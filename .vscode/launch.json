@@ -1,0 +1,16 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "AppleClang Debug MyGame",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/out/build/Game/vve_mygame",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false
+        }
+    ]
+}

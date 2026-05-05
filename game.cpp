@@ -1,9 +1,13 @@
 
 #include "VEInclude.h"
 #include "VHInclude.h"
+#include <cstdlib>
 #include <format>
+#include <fstream>
 #include <iostream>
 #include <utility>
+
+#include "frame_encoder.cpp"
 
 class MyGame : public vve::System {
 
@@ -189,6 +193,7 @@ private:
 int main() {
   vve::Engine engine("My Engine", vve::RendererType::RENDERER_TYPE_FORWARD);
   MyGame mygui{engine};
+  FrameEncoder encoder{engine};
   engine.Run();
 
   return 0;
