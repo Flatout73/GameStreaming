@@ -2,7 +2,6 @@
  *  udp_sender6.cpp
  *
  *  IPv6 UDP sender for macOS/Linux (POSIX sockets).
- *  Based on UDPSend6 example by Helmut Hlavacs (2022).
  */
 
 // Enable RFC 3542 IPv6 socket options (IPV6_DONTFRAG etc.) on macOS

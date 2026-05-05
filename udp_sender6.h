@@ -12,7 +12,6 @@ extern "C" {
 #include <netdb.h>
 #include <netinet/in.h>
 #include <stdlib.h>
-#include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -40,7 +39,5 @@ public:
   /// Send a buffer as a single UDP6 datagram (with RTHeader prepended).
   /// Returns the number of bytes sent (excluding header), or -1 on error.
   int send(const char *buffer, int len);
-
-  /// Close the socket.
   void closeSock();
 };
