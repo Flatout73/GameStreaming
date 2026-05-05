@@ -69,6 +69,10 @@ private:
   SwsContext *m_swsCtx{nullptr};
   std::ofstream m_outFile;
   bool m_initialized{false};
+
+  // ---- Pre-allocated readback buffer (avoid per-frame heap alloc) ----
+  uint8_t *m_readbackBuffer{nullptr};
+  uint32_t m_readbackBufferSize{0};
   int64_t m_frameIndex{0};
   std::string m_windowName;
   std::string m_codecName;
@@ -109,9 +113,11 @@ private:
     m_codecCtx->max_b_frames = 1;
     m_codecCtx->pix_fmt = AV_PIX_FMT_YUV420P;
 
-    // Apply low-latency presets to keep NAL units small for UDP
-    // av_opt_set(m_codecCtx->priv_data, "preset", "ultrafast", 0);
-    // av_opt_set(m_codecCtx->priv_data, "tune", "zerolatency", 0);
+    // Low-latency: ultrafast preset + minimal lookahead (compatible with B-frames)
+    // Note: tune=zerolatency forces bframes=0, so we set the params manually
+    av_opt_set(m_codecCtx->priv_data, "preset", "ultrafast", 0);
+    av_opt_set(m_codecCtx->priv_data, "x265-params",
+              "rc-lookahead=5:sync-lookahead=0:frame-threads=1", 0);
 
     if (avcodec_open2(m_codecCtx, m_codec, nullptr) < 0) {
       std::cerr << "FrameEncoder: could not open codec" << std::endl;
@@ -188,11 +194,16 @@ private:
     }
 
     // Copy the swapchain image to host memory
-    uint8_t *dataImage = new uint8_t[imageSize];
+    // Reuse pre-allocated buffer (avoid ~2.8MB alloc per frame)
+    if (m_readbackBufferSize < imageSize) {
+      delete[] m_readbackBuffer;
+      m_readbackBuffer = new uint8_t[imageSize];
+      m_readbackBufferSize = imageSize;
+    }
     vvh::ImgCopyImageToHost({
         vstate().m_device, vstate().m_vmaAllocator, vstate().m_graphicsQueue,
         vstate().m_commandPool, image, VK_FORMAT_R8G8B8A8_UNORM,
-        VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, dataImage,
+        VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, m_readbackBuffer,
         extent.width, extent.height, imageSize, 2, 1, 0,
         3 // channel swap indices r,g,b,a
     });
@@ -203,7 +214,7 @@ private:
     rgbFrame->height = extent.height;
 
     // Wire up the rgbFrame's data array to point to our captured pixels
-    av_image_fill_arrays(rgbFrame->data, rgbFrame->linesize, dataImage,
+    av_image_fill_arrays(rgbFrame->data, rgbFrame->linesize, m_readbackBuffer,
                          AV_PIX_FMT_RGBA, extent.width, extent.height, 1);
 
     // Convert RGBA AVFrame -> YUV420P AVFrame (Store pattern)
@@ -215,7 +226,6 @@ private:
     if (avcodec_send_frame(m_codecCtx, m_yuvFrame) < 0) {
       std::cerr << "Error sending frame to codec" << std::endl;
       av_frame_free(&rgbFrame);
-      delete[] dataImage;
       return false;
     }
 
@@ -246,11 +256,12 @@ private:
         m_codecCtx->time_base = {1, c_fps};
         m_codecCtx->framerate = {c_fps, 1};
         m_codecCtx->gop_size = 30;
-        m_codecCtx->max_b_frames = 0;
+        m_codecCtx->max_b_frames = 1;
         m_codecCtx->pix_fmt = AV_PIX_FMT_YUV420P;
 
-        // av_opt_set(m_codecCtx->priv_data, "preset", "ultrafast", 0);
-        // av_opt_set(m_codecCtx->priv_data, "tune", "zerolatency", 0);
+        av_opt_set(m_codecCtx->priv_data, "preset", "ultrafast", 0);
+        av_opt_set(m_codecCtx->priv_data, "x265-params",
+                  "rc-lookahead=5:sync-lookahead=0:frame-threads=1", 0);
 
         if (avcodec_open2(m_codecCtx, m_codec, nullptr) < 0) {
           std::cerr
@@ -279,7 +290,6 @@ private:
 
     m_frameIndex++;
     av_frame_free(&rgbFrame);
-    delete[] dataImage;
     return false;
   }
 
@@ -310,6 +320,9 @@ private:
       av_freep(&m_yuvFrame->data[0]);
       av_frame_free(&m_yuvFrame);
     }
+    delete[] m_readbackBuffer;
+    m_readbackBuffer = nullptr;
+    m_readbackBufferSize = 0;
     avcodec_free_context(&m_codecCtx);
     sws_freeContext(m_swsCtx);
     m_swsCtx = nullptr;
