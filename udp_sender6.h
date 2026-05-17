@@ -2,7 +2,6 @@
  *  udp_sender6.h
  *
  *  IPv6 UDP sender for macOS/Linux (POSIX sockets).
- *  Based on UDPSend6 example by Helmut Hlavacs (2022).
  */
 
 #pragma once
