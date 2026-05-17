@@ -117,6 +117,24 @@ int UDPSender6::send(const char *buffer, int len) {
   return static_cast<int>(ret - sizeof(header));
 }
 
+bool UDPSender6::pollReceiverReport(ReceiverReport &outReport) {
+  if (sock < 0)
+    return false;
+
+  ReceiverReport buf;
+  struct sockaddr_in6 from;
+  socklen_t fromlen = sizeof(from);
+
+  ssize_t n = recvfrom(sock, &buf, sizeof(buf), MSG_DONTWAIT,
+                       reinterpret_cast<struct sockaddr *>(&from), &fromlen);
+  if (n == static_cast<ssize_t>(sizeof(ReceiverReport))) {
+    outReport = buf;
+    return true;
+  }
+  // n < 0 with EAGAIN/EWOULDBLOCK just means no data is queued.
+  return false;
+}
+
 void UDPSender6::closeSock() {
   if (sock >= 0) {
     ::close(sock);

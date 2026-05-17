@@ -22,6 +22,14 @@ struct RTHeader {
   unsigned long packetnum;
 };
 
+/// Report sent back from the receiver every ~10 s.
+/// Layout matches the Swift ReceiverReport (3 x double, 24 bytes).
+struct ReceiverReport {
+  double receivedByteRate;
+  double packetLossRate;
+  double frameRate;
+};
+
 class UDPSender6 {
 
 public:
@@ -38,5 +46,11 @@ public:
   /// Send a buffer as a single UDP6 datagram (with RTHeader prepended).
   /// Returns the number of bytes sent (excluding header), or -1 on error.
   int send(const char *buffer, int len);
+
+  /// Non-blocking poll for an incoming receiver report on this socket.
+  /// Returns true and fills `outReport` if a well-formed report was read.
+  /// Returns false otherwise (no data, or unexpected size).
+  bool pollReceiverReport(ReceiverReport &outReport);
+
   void closeSock();
 };
