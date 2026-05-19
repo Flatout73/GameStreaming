@@ -202,10 +202,11 @@ private:
           if (newFps != m_currentFps) {
             m_currentFps = newFps;
             m_frameDuration =
-                std::chrono::nanoseconds(std::chrono::seconds(1)) / m_currentFps;
-            std::cout << "FrameEncoder: reducing send rate to "
-                      << m_currentFps << " fps (loss "
-                      << report.packetLossRate << ")" << std::endl;
+                std::chrono::nanoseconds(std::chrono::seconds(1)) /
+                m_currentFps;
+            std::cout << "FrameEncoder: reducing send rate to " << m_currentFps
+                      << " fps (loss " << report.packetLossRate << ")"
+                      << std::endl;
           }
         }
       }
@@ -237,8 +238,8 @@ private:
     vvh::ImgCopyImageToHost({
         vstate().m_device, vstate().m_vmaAllocator, vstate().m_graphicsQueue,
         vstate().m_commandPool, image, VK_FORMAT_R8G8B8A8_UNORM,
-        VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, m_readbackBuffer,
-        extent.width, extent.height, imageSize, 2, 1, 0,
+        VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+        m_readbackBuffer, extent.width, extent.height, imageSize, 2, 1, 0,
         3 // channel swap indices r,g,b,a
     });
 
@@ -295,7 +296,7 @@ private:
 
         av_opt_set(m_codecCtx->priv_data, "preset", "ultrafast", 0);
         av_opt_set(m_codecCtx->priv_data, "x265-params",
-                  "rc-lookahead=5:sync-lookahead=0:frame-threads=1", 0);
+                   "rc-lookahead=5:sync-lookahead=0:frame-threads=1", 0);
 
         if (avcodec_open2(m_codecCtx, m_codec, nullptr) < 0) {
           std::cerr

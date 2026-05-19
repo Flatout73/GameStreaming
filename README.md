@@ -7,6 +7,29 @@ I use mac and installed ffmpeg with brew. This repo conatins the code for the ga
 - Game: https://github.com/Flatout73/GameStreaming
 - Reciever: https://github.com/Flatout73/GameStreamingReciever
 
+Check branches for each tasks.
+
+## Receiver reports
+
+From the receiver side, I have implemented polling for the receiver reports. The receiver sends reports every ~10 s. They include byte rate, packet loss rate, and frame rate. So now we have 2 threads created via Thread:
+
+```swift
+        let recvT = Thread { [weak self] in
+            self?.receiveLoop()
+        }
+        recvT.name = "UDPReceiver.ThreadA"
+        recvT.start()
+        receiveThread = recvT
+
+        let reportT = Thread { [weak self] in
+            self?.reportLoop()
+        }
+        reportT.name = "UDPReceiver.Report"
+        reportT.start()
+        reportThread = reportT
+```
+
+Also, I have added report showing in the game window of the reciever part to check that it works.
 
 ## Streaming 
 
