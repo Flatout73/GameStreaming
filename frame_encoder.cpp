@@ -33,12 +33,12 @@ public:
     m_udpAddr = envUdpAddr ? envUdpAddr : "::1";
     m_udpPort = envUdpPort ? std::stoi(envUdpPort) : 50000;
 
-    // --- Frame duration for rate limiting (mutable; can be reduced on loss) ---
+    // Frame duration for rate limiting (mutable; can be reduced on loss)
     m_currentFps = c_target_fps;
     m_frameDuration =
         std::chrono::nanoseconds(std::chrono::seconds(1)) / m_currentFps;
 
-    // --- Find the encoder ---
+    // Find the encoder
     if (m_codecName == "hevc" || m_codecName == "h265") {
       m_codec = avcodec_find_encoder(AV_CODEC_ID_HEVC);
     } else {
@@ -120,11 +120,12 @@ private:
     m_codecCtx->max_b_frames = 1;
     m_codecCtx->pix_fmt = AV_PIX_FMT_YUV420P;
 
-    // Low-latency: ultrafast preset + minimal lookahead (compatible with B-frames)
-    // Note: tune=zerolatency forces bframes=0, so we set the params manually
+    // Low-latency: ultrafast preset + minimal lookahead
+    // Note: tune=zerolatency forces bframes=0,
+    // so we set the params manually
     av_opt_set(m_codecCtx->priv_data, "preset", "ultrafast", 0);
     av_opt_set(m_codecCtx->priv_data, "x265-params",
-              "rc-lookahead=5:sync-lookahead=0:frame-threads=1", 0);
+               "rc-lookahead=5:sync-lookahead=0:frame-threads=1", 0);
 
     if (avcodec_open2(m_codecCtx, m_codec, nullptr) < 0) {
       std::cerr << "FrameEncoder: could not open codec" << std::endl;
@@ -184,7 +185,7 @@ private:
     }
     m_lastFrameTime = now;
 
-    // ---- Poll for a receiver report on the UDP socket (non-blocking) ----
+    // ---- Poll for a receiver report on the UDP socket ----
     // Check at most a few times per second to avoid syscall overhead.
     if (m_lastReportPoll == std::chrono::steady_clock::time_point{} ||
         (now - m_lastReportPoll) > std::chrono::milliseconds(500)) {
@@ -196,7 +197,7 @@ private:
                   << " loss=" << report.packetLossRate
                   << " fps=" << report.frameRate << std::endl;
         // If the receiver lost packets, throttle the source frame rate a bit.
-        // 1% loss -> drop 2 fps; clamped to [c_min_fps, c_target_fps].
+        // 1% loss -> drop 2 fps
         if (report.packetLossRate > 0.01 && m_currentFps > c_min_fps) {
           int newFps = std::max(c_min_fps, m_currentFps - 2);
           if (newFps != m_currentFps) {

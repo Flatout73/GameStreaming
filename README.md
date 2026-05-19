@@ -11,7 +11,7 @@ Check branches for each tasks.
 
 ## Receiver reports
 
-From the receiver side, I have implemented polling for the receiver reports. The receiver sends reports every ~10 s. They include byte rate, packet loss rate, and frame rate. So now we have 2 threads created via Thread:
+I have implemented polling for the receiver reports. The receiver sends reports every ~10 s. They include byte rate, packet loss rate, and frame rate. So now we have 2 threads created via Thread:
 
 ```swift
         let recvT = Thread { [weak self] in
