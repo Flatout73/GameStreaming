@@ -1,3 +1,4 @@
+#include <chrono>
 #include <string>
 
 extern "C" {
@@ -7,7 +8,11 @@ extern "C" {
 #include <libswscale/swscale.h>
 }
 
-// FrameEncoder – captures every rendered frame and encodes it to H.264/HEVC
+#include "udp_sender6.h"
+
+// FrameEncoder – captures every rendered frame, encodes it to H.264/HEVC,
+// writes the elementary stream to a file, and sends each encoded packet
+// over IPv6 UDP to a configurable receiver.
 class FrameEncoder : public vve::System {
 public:
   FrameEncoder(vve::Engine &engine, std::string windowName = "")
@@ -18,10 +23,18 @@ public:
     const char *envCodec = std::getenv("ENC_CODEC");
     const char *envBitrate = std::getenv("ENC_BITRATE");
     const char *envOut = std::getenv("ENC_OUT");
+    const char *envUdpAddr = std::getenv("UDP_ADDR");
+    const char *envUdpPort = std::getenv("UDP_PORT");
 
-    m_codecName = envCodec ? envCodec : "h264";
-    m_bitrateVal = envBitrate ? std::stoll(envBitrate) : 2000000;
+    m_codecName = envCodec ? envCodec : "hevc";
+    m_bitrateVal = envBitrate ? std::stoll(envBitrate) : 500000;
     m_outFileBase = envOut ? envOut : "output";
+    m_udpAddr = envUdpAddr ? envUdpAddr : "::1";
+    m_udpPort = envUdpPort ? std::stoi(envUdpPort) : 50000;
+
+    // --- Frame duration for rate limiting ---
+    m_frameDuration =
+        std::chrono::nanoseconds(std::chrono::seconds(1)) / c_target_fps;
 
     // --- Find the encoder ---
     if (m_codecName == "hevc" || m_codecName == "h265") {
@@ -35,6 +48,9 @@ public:
                 << std::endl;
       return;
     }
+
+    // --- Initialize UDP sender ---
+    m_udpSender.init(m_udpAddr.c_str(), m_udpPort);
 
     // --- Register for FRAME_END (like VEGUI.cpp) ---
     m_engine.RegisterCallbacks(
@@ -53,11 +69,26 @@ private:
   SwsContext *m_swsCtx{nullptr};
   std::ofstream m_outFile;
   bool m_initialized{false};
+
+  // ---- Pre-allocated readback buffer (avoid per-frame heap alloc) ----
+  uint8_t *m_readbackBuffer{nullptr};
+  uint32_t m_readbackBufferSize{0};
   int64_t m_frameIndex{0};
   std::string m_windowName;
   std::string m_codecName;
   std::string m_outFileBase;
   int64_t m_bitrateVal;
+
+  // ---- UDP streaming state ----
+  UDPSender6 m_udpSender;
+  std::string m_udpAddr;
+  int m_udpPort{50000};
+
+  // ---- Frame rate limiting ----
+  static constexpr int c_target_fps = 30;
+  std::chrono::steady_clock::time_point m_lastFrameTime{};
+  std::chrono::nanoseconds m_frameDuration{};
+  bool m_firstFrame{true};
 
   static constexpr int c_fps = 30;
   static constexpr int c_bitrateSwitchFrame =
@@ -81,6 +112,12 @@ private:
     m_codecCtx->gop_size = 10;
     m_codecCtx->max_b_frames = 1;
     m_codecCtx->pix_fmt = AV_PIX_FMT_YUV420P;
+
+    // Low-latency: ultrafast preset + minimal lookahead (compatible with B-frames)
+    // Note: tune=zerolatency forces bframes=0, so we set the params manually
+    av_opt_set(m_codecCtx->priv_data, "preset", "ultrafast", 0);
+    av_opt_set(m_codecCtx->priv_data, "x265-params",
+              "rc-lookahead=5:sync-lookahead=0:frame-threads=1", 0);
 
     if (avcodec_open2(m_codecCtx, m_codec, nullptr) < 0) {
       std::cerr << "FrameEncoder: could not open codec" << std::endl;
@@ -118,13 +155,27 @@ private:
 
     m_initialized = true;
     std::cout << "FrameEncoder: initialized " << width << "x" << height
-              << std::endl;
+              << " → streaming to [" << m_udpAddr << "]:" << m_udpPort << " @ "
+              << c_target_fps << " fps" << std::endl;
     return true;
   }
 
   bool OnFrameEnd(Message message) {
     if (!m_codec)
       return false;
+
+    // ---- Frame rate limiting using std::chrono ----
+    auto now = std::chrono::steady_clock::now();
+    if (m_firstFrame) {
+      m_lastFrameTime = now;
+      m_firstFrame = false;
+    } else {
+      auto elapsed = now - m_lastFrameTime;
+      if (elapsed < m_frameDuration) {
+        return false; // Skip this frame — too soon
+      }
+    }
+    m_lastFrameTime = now;
 
     auto vstate = std::get<1>(vve::Renderer::GetState(m_registry));
     auto wstate = std::get<1>(vve::Window::GetState(m_registry, m_windowName));
@@ -143,11 +194,16 @@ private:
     }
 
     // Copy the swapchain image to host memory
-    uint8_t *dataImage = new uint8_t[imageSize];
+    // Reuse pre-allocated buffer (avoid ~2.8MB alloc per frame)
+    if (m_readbackBufferSize < imageSize) {
+      delete[] m_readbackBuffer;
+      m_readbackBuffer = new uint8_t[imageSize];
+      m_readbackBufferSize = imageSize;
+    }
     vvh::ImgCopyImageToHost({
         vstate().m_device, vstate().m_vmaAllocator, vstate().m_graphicsQueue,
         vstate().m_commandPool, image, VK_FORMAT_R8G8B8A8_UNORM,
-        VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, dataImage,
+        VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, m_readbackBuffer,
         extent.width, extent.height, imageSize, 2, 1, 0,
         3 // channel swap indices r,g,b,a
     });
@@ -158,7 +214,7 @@ private:
     rgbFrame->height = extent.height;
 
     // Wire up the rgbFrame's data array to point to our captured pixels
-    av_image_fill_arrays(rgbFrame->data, rgbFrame->linesize, dataImage,
+    av_image_fill_arrays(rgbFrame->data, rgbFrame->linesize, m_readbackBuffer,
                          AV_PIX_FMT_RGBA, extent.width, extent.height, 1);
 
     // Convert RGBA AVFrame -> YUV420P AVFrame (Store pattern)
@@ -170,7 +226,6 @@ private:
     if (avcodec_send_frame(m_codecCtx, m_yuvFrame) < 0) {
       std::cerr << "Error sending frame to codec" << std::endl;
       av_frame_free(&rgbFrame);
-      delete[] dataImage;
       return false;
     }
 
@@ -182,6 +237,9 @@ private:
             m_pkt->pts * m_codecCtx->time_base.den / m_codecCtx->time_base.num;
         m_outFile.write(reinterpret_cast<const char *>(m_pkt->data),
                         m_pkt->size);
+        // Also send via UDP
+        m_udpSender.send(reinterpret_cast<const char *>(m_pkt->data),
+                         m_pkt->size);
         av_packet_unref(m_pkt);
       }
 
@@ -197,9 +255,13 @@ private:
         m_codecCtx->height = extent.height;
         m_codecCtx->time_base = {1, c_fps};
         m_codecCtx->framerate = {c_fps, 1};
-        m_codecCtx->gop_size = 10;
+        m_codecCtx->gop_size = 30;
         m_codecCtx->max_b_frames = 1;
         m_codecCtx->pix_fmt = AV_PIX_FMT_YUV420P;
+
+        av_opt_set(m_codecCtx->priv_data, "preset", "ultrafast", 0);
+        av_opt_set(m_codecCtx->priv_data, "x265-params",
+                  "rc-lookahead=5:sync-lookahead=0:frame-threads=1", 0);
 
         if (avcodec_open2(m_codecCtx, m_codec, nullptr) < 0) {
           std::cerr
@@ -218,17 +280,20 @@ private:
     while (avcodec_receive_packet(m_codecCtx, m_pkt) == 0) {
       m_pkt->pts = m_pkt->dts = m_yuvFrame->pts * m_codecCtx->time_base.den /
                                 m_codecCtx->time_base.num;
+      // Write to file
       m_outFile.write(reinterpret_cast<const char *>(m_pkt->data), m_pkt->size);
+      // Send via UDP
+      m_udpSender.send(reinterpret_cast<const char *>(m_pkt->data),
+                       m_pkt->size);
       av_packet_unref(m_pkt);
     }
 
     m_frameIndex++;
     av_frame_free(&rgbFrame);
-    delete[] dataImage;
     return false;
   }
 
-  // ---- Flush encoder, close file, convert to MP4 ----
+  // ---- Flush encoder, close file, convert to MP4, close UDP ----
   void Shutdown() {
     if (!m_initialized)
       return;
@@ -240,16 +305,24 @@ private:
       m_pkt->pts = m_pkt->dts =
           m_pkt->pts * m_codecCtx->time_base.den / m_codecCtx->time_base.num;
       m_outFile.write(reinterpret_cast<const char *>(m_pkt->data), m_pkt->size);
+      m_udpSender.send(reinterpret_cast<const char *>(m_pkt->data),
+                       m_pkt->size);
       av_packet_unref(m_pkt);
     }
 
     m_outFile.close();
+
+    // Close UDP socket
+    m_udpSender.closeSock();
 
     av_packet_free(&m_pkt);
     if (m_yuvFrame) {
       av_freep(&m_yuvFrame->data[0]);
       av_frame_free(&m_yuvFrame);
     }
+    delete[] m_readbackBuffer;
+    m_readbackBuffer = nullptr;
+    m_readbackBufferSize = 0;
     avcodec_free_context(&m_codecCtx);
     sws_freeContext(m_swsCtx);
     m_swsCtx = nullptr;

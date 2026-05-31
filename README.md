@@ -2,6 +2,22 @@
 
 I use mac and installed ffmpeg with brew. This repo conatins the code for the game. I put the engine into folder nearby.
 
+## Source code
+
+- Game: https://github.com/Flatout73/GameStreaming
+- Reciever: https://github.com/Flatout73/GameStreamingReciever
+
+
+## Streaming 
+
+I used ipv6 to stream the video and hevc (h.265) codec. It streams at address [::1]:50000.
+I have created Swift native app using SwiftSDL wrapper as a receiver.
+
+Video:
+https://youtu.be/QpVJxrvyZlk
+
+Video with optimizations after Claude:
+https://youtu.be/-j3_ECNi0QA
 
 ## Codecs
 
@@ -15,7 +31,3 @@ Top-Right: H.264 Low (100 kbps)
 Bottom-Right: HEVC Low (100 kbps)
 
 https://youtu.be/g2bkt_YEWN8
-
-
-Source code:
-https://github.com/Flatout73/GameStreaming

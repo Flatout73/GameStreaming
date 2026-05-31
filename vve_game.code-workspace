@@ -10,6 +10,9 @@
 		},
 		{
 			"path": "../ffmpeg"
+		},
+		{
+			"path": "../UDPSend"
 		}
 	],
 	"settings": {
