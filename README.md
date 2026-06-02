@@ -1,6 +1,6 @@
 # Game Streaming
 
-I use mac and installed ffmpeg with brew. This repo conatins the code for the game. I put the engine into folder nearby.
+I use mac and installed ffmpeg with brew. This repo contains the code for the game. I put the engine into folder nearby.
 
 ## Source code
 
@@ -11,7 +11,7 @@ Check branches for each tasks.
 
 ## Event dispatcher
 
-I have iplemented event_receiver and EventSender for sending mouse and keyboard events.
+I have iplemented event_receiver for receiving mouse and keyboard events and EventSender for sending with help of Claude.
 Also, there is DrawSceneInspector for drawing scene tree.
 
 ## Receiver reports

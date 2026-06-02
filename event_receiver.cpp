@@ -16,10 +16,9 @@ extern "C" {
 #include "net_input_event.h"
 
 // EventReceiver – the server-side counterpart to the client's input forwarding.
-// It binds an IPv6 UDP socket, receives the SDL events the client captured from
-// the user, reconstructs a native SDL_Event and pushes it into this process's
-// SDL event queue with SDL_PushEvent. The engine's normal SDL_PollEvent loop
-// (WindowSDL::OnPollEvents) then dispatches them, driving the camera, ImGui, etc.
+// It binds an IPv6 UDP socket, receives the SDL events the client captured from the user,
+// reconstructs a native SDL_Event and pushes it into this process's SDL event queue with SDL_PushEvent.
+// The engine's normal SDL_PollEvent loop (WindowSDL::OnPollEvents) then dispatches them, driving the camera, ImGui, etc.
 class EventReceiver : public vve::System {
 public:
   EventReceiver(vve::Engine &engine, std::string windowName = "")
@@ -31,11 +30,13 @@ public:
 
     InitSocket();
 
-    // Drain the network queue at the very start of every frame,
-    // before the window system pumps SDL_PollEvent during POLL_EVENTS in the same frame.
+    // Drain the network queue at the very start of every frame
     m_engine.RegisterCallbacks(
         {{this, 0, "FRAME_START",
-          [this](Message &message) { return OnFrameStart(message); }}});
+          [this](Message &message) {
+             return OnFrameStart(message);
+             }}
+            });
   }
 
   ~EventReceiver() {
@@ -83,8 +84,8 @@ private:
               << std::endl;
   }
 
-  // The injected events carry the focused window's id so the ImGui SDL3 backend
-  // routes them to the right viewport. Resolved lazily once the window exists.
+  // The injected events carry the focused window's id so the ImGui SDL3 backend routes them to the right viewport. 
+  // Resolved lazily once the window exists.
   SDL_WindowID WindowID() {
     if (m_windowID == 0) {
       auto [handle, wstate, wsdlstate] =
