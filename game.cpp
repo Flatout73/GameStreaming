@@ -181,8 +181,8 @@ public:
     return false;
   }
 
-  // ---- Scene inspector: lists every object that has a transform, shows its
-  // name/type/position, and exposes a color picker for lights. ----
+  // Scene inspector: lists every object, shows its name/type/position,
+  // and exposes a color picker for lights
   void DrawSceneInspector() {
     ImGui::SetNextWindowSize(ImVec2(360.0f, 420.0f), ImGuiCond_FirstUseEver);
     ImGui::Begin("Scene");

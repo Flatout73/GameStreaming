@@ -9,6 +9,11 @@ I use mac and installed ffmpeg with brew. This repo conatins the code for the ga
 
 Check branches for each tasks.
 
+## Event dispatcher
+
+I have iplemented event_receiver and EventSender for sending mouse and keyboard events.
+Also, there is DrawSceneInspector for drawing scene tree.
+
 ## Receiver reports
 
 I have implemented polling for the receiver reports. The receiver sends reports every ~10 s. They include byte rate, packet loss rate, and frame rate. So now we have 2 threads created via Thread:

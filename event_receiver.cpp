@@ -31,8 +31,8 @@ public:
 
     InitSocket();
 
-    // Drain the network queue at the very start of every frame, before the
-    // window system pumps SDL_PollEvent during POLL_EVENTS in the same frame.
+    // Drain the network queue at the very start of every frame,
+    // before the window system pumps SDL_PollEvent during POLL_EVENTS in the same frame.
     m_engine.RegisterCallbacks(
         {{this, 0, "FRAME_START",
           [this](Message &message) { return OnFrameStart(message); }}});
