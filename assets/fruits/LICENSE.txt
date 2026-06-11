@@ -1,0 +1,3 @@
+Fruit models (apple, banana, cherries, orange) + colormap.png
+from Kenney Food Kit — https://kenney.nl/assets/food-kit
+License: CC0 1.0 Universal (public domain). No attribution required.
