@@ -22,9 +22,6 @@ class MyGame : public vve::System {
   enum class State : int { RUNNING, DEAD };
   enum class DeathReason : int { NONE, SELF, STONE, WALL, TIME };
 
-  // ----- tuning -----
-  // field covers the measured SOLID interior of the cobblestone terrain;
-  // the mesh boundary is ragged and has holes near x>=11, y<=-21
   static constexpr int c_grid_x = 25;           // cells west-east
   static constexpr int c_grid_y = 41;           // cells south-north
   static constexpr float c_cell = 1.0f;         // world units per cell
@@ -166,7 +163,7 @@ public:
         vve::Scale{vec3_t{60.0f}}, vve::UVScale{vec2_t{30.0f}});
 
     // border wall: 4 stretched gray cubes at the terrain edges
-    m_engine.LoadScene(vve::Filename{"assets/standard/cube.obj"});
+    m_engine.LoadScene(vve::Filename{"assets/standard/cube.obj"}, aiProcess_FlipWindingOrder);
     const vvh::Color wallColor{{0.06f, 0.06f, 0.07f, 1.0f},
                                {0.45f, 0.45f, 0.48f, 1.0f},
                                {0.10f, 0.10f, 0.10f, 1.0f}};

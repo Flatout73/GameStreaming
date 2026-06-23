@@ -1,18 +1,3 @@
-/*
- *  net_sound_command.h
- *
- *  Wire format for sound-play commands streamed from the server to the
- *  streaming client. The server's game logic decides *when* a sound should
- *  play (level load, eat, crash, game over) but plays nothing itself; it
- *  enqueues a SoundCommand which is streamed over IPv6 UDP to the client,
- *  and the client renders the actual audio.
- *
- *  Layout: 5 x 4-byte fields = 20 bytes, no padding. Must match the Swift
- *  `SoundCommand` struct byte-for-byte (same machine, little-endian).
- *  Datagrams are sent through UDPSender6, so an RTHeader (16 bytes) precedes
- *  this payload on the wire; the client skips it before decoding.
- */
-
 #pragma once
 
 #include <cstdint>

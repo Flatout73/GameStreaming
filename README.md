@@ -9,6 +9,10 @@ I use mac and installed ffmpeg with brew. This repo contains the code for the ga
 
 Check branches for each tasks.
 
+## Snake
+
+Not it is fully playable snake game in 3D. Sound is played locally on the client. Server just send commands what to play.
+
 ## Event dispatcher
 
 I have iplemented event_receiver for receiving mouse and keyboard events and EventSender for sending with help of Claude.
