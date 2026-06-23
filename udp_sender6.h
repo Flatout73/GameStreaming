@@ -16,11 +16,17 @@ extern "C" {
 #include <unistd.h>
 }
 
-/// Header prepended to every UDP packet.
+#include <cstdint>
+
+/// Header prepended to every UDP packet. The client derives its payload offset
+/// from sizeof(RTHeader), so the width is pinned (not `unsigned long`, which is
+/// 4 bytes on LLP64/ILP32) and asserted to keep both sides in lockstep.
 struct RTHeader {
   double time;
-  unsigned long packetnum;
+  uint64_t packetnum;
 };
+
+static_assert(sizeof(RTHeader) == 16, "RTHeader wire layout must be 16 bytes");
 
 /// Report sent back from the receiver every ~10 s.
 /// Layout matches the Swift ReceiverReport (3 x double, 24 bytes).
@@ -35,7 +41,7 @@ class UDPSender6 {
 public:
   int sock = -1;
   struct sockaddr_in6 addr;
-  unsigned long packetnum = 0;
+  uint64_t packetnum = 0;
 
   UDPSender6() = default;
   ~UDPSender6();

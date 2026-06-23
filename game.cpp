@@ -15,6 +15,7 @@
 
 #include "event_receiver.cpp"
 #include "frame_encoder.cpp"
+#include "sound_command_sender.h"
 
 class MyGame : public vve::System {
 
@@ -31,7 +32,7 @@ class MyGame : public vve::System {
   static constexpr int c_seg_warm_margin = 16;   // keep the body pool this many
                                                  // segments ahead of the snake
   static constexpr int c_seg_warm_per_frame = 2; // segments pre-created / frame
-  static constexpr int c_num_stones = 26;       // same density as 12 on 21x21
+  static constexpr int c_num_stones = 14;       // fewer rocks on the field
   static constexpr int c_num_fruits = 7;        // fruits on the field at once
   static constexpr float c_step_time0 = 0.16f;  // seconds per grid step
   static constexpr float c_step_time_min = 0.10f;
@@ -44,6 +45,7 @@ class MyGame : public vve::System {
   static constexpr float c_head_lerp = 14.0f;   // head yaw smoothing (1/s)
   static constexpr float c_half_pi = 1.5707963f;
   inline static const vec3_t c_park{0.0f, 0.0f, -50.0f}; // pooled-object parking
+  static constexpr int c_max_volume = 128; // client volume scale (0..c_max_volume)
 
   struct FruitType {
     const char *file;
@@ -54,9 +56,9 @@ class MyGame : public vve::System {
   };
   inline static const std::array<FruitType, 4> c_fruit_types{{
       {"assets/fruits/apple.obj", "Apple", 10, 1, 3.0f},
-      {"assets/fruits/orange.obj", "Orange", 20, 2, 3.2f},
-      {"assets/fruits/banana.obj", "Banana", 30, 3, 1.5f},
-      {"assets/fruits/cherries.obj", "Cherries", 50, 5, 3.2f},
+      {"assets/fruits/orange.obj", "Orange", 20, 1, 3.2f},
+      {"assets/fruits/banana.obj", "Banana", 30, 1, 1.5f},
+      {"assets/fruits/cherries.obj", "Cherries", 50, 1, 3.2f},
   }};
 
   struct Fruit {
@@ -82,7 +84,11 @@ public:
           [this](Message &message) { return OnKeyDown(message); }},
          {this, -1000, "SDL_KEY_REPEAT",
           [this](Message &message) { return OnKeyRepeat(message); }}});
-    m_engine.SetVolume(m_volume);
+
+    // All audio is rendered on the client: stream sound commands instead of
+    // playing anything on the server.
+    m_sound.start("::1", 50002);
+    m_sound.setMasterVolume(static_cast<int>(m_volume));
   };
 
   ~MyGame() {};
@@ -154,7 +160,7 @@ public:
         vve::Name{}, vve::ParentHandle{},
         vve::MeshName{"assets/test/plane/plane_t_n_s.obj/plane"},
         vve::TextureName{"assets/test/plane/grass.jpg"},
-        vve::Position{vec3_t{0.0f, 0.0f, 0.0f}},
+        vve::Position{vec3_t{0.0f, 0.0f, 0.01f}},
         vve::Rotation{mat3_t{glm::rotate(mat4_t{1.0f}, c_half_pi,
                                          vec3_t{1.0f, 0.0f, 0.0f})}},
         vve::Scale{vec3_t{60.0f}}, vve::UVScale{vec2_t{30.0f}});
@@ -223,8 +229,7 @@ public:
 
     ResetGame();
 
-    m_engine.PlaySound(vve::Filename{"assets/sounds/dance.mp3"}, -1, 50);
-    m_engine.SetVolume(m_volume);
+    m_sound.play(netsound::SOUND_MUSIC, -1, 50); // looping background music
     return false;
   };
 
@@ -331,7 +336,7 @@ public:
   void Restart() {
     std::cout << "[game] restart" << std::endl;
     ResetGame();
-    m_engine.PlaySound(vve::Filename{"assets/sounds/dance.mp3"}, -1, 50);
+    m_sound.play(netsound::SOUND_MUSIC, -1, 50); // restart background music
   }
 
   void Die(DeathReason reason) {
@@ -342,10 +347,10 @@ public:
     m_deathReason = reason;
     m_prevSnake = m_snake;
     m_accum = 0.0f;
-    m_engine.PlaySound(vve::Filename{"assets/sounds/dance.mp3"}, 0, 50);
+    m_sound.stopSound(netsound::SOUND_MUSIC); // stop the looping music
     if (reason != DeathReason::TIME)
-      m_engine.PlaySound(vve::Filename{"assets/sounds/explosion.wav"}, 1, 80);
-    m_engine.PlaySound(vve::Filename{"assets/sounds/gameover.wav"}, 1, 80);
+      m_sound.play(netsound::SOUND_EXPLOSION, 0, 80);
+    m_sound.play(netsound::SOUND_GAMEOVER, 0, 80);
   }
 
   void StepSnake() {
@@ -373,7 +378,7 @@ public:
       m_timeLeft = std::min(m_timeLeft + c_bonus_time, 999.0f);
       m_stepTime = std::max(c_step_time_min,
                             c_step_time0 - 0.002f * (m_score / 10.0f));
-      m_engine.PlaySound(vve::Filename{"assets/sounds/bell.wav"}, 1, 80);
+      m_sound.play(netsound::SOUND_BELL, 0, 80); // fruit eaten
       ParkFruit(f);
       SpawnFruit();
       break;
@@ -566,8 +571,10 @@ public:
       ImGui::Begin("Settings", &m_show_settings,
                    ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
                        ImGuiWindowFlags_NoSavedSettings);
-      if (ImGui::Button("Exit", ImVec2(-1.0f, 0.0f)))
+      if (ImGui::Button("Exit", ImVec2(-1.0f, 0.0f))) {
+        m_sound.stop(); // exit(0) skips dtors; silence the client first
         exit(0);
+      }
       ImGui::End();
     }
 
@@ -589,8 +596,8 @@ public:
     for (auto &ft : c_fruit_types)
       ImGui::Text("%s: %d", ft.label, ft.points);
     ImGui::SetNextItemWidth(140.0f);
-    if (ImGui::SliderFloat("Volume", &m_volume, 0, MIX_MAX_VOLUME, "%.0f")) {
-      m_engine.SetVolume(m_volume);
+    if (ImGui::SliderFloat("Volume", &m_volume, 0, c_max_volume, "%.0f")) {
+      m_sound.setMasterVolume(static_cast<int>(m_volume)); // client master volume
     }
     ImGui::End();
 
@@ -727,8 +734,11 @@ private:
   float m_headYaw = c_half_pi;
 
   // UI
-  float m_volume{MIX_MAX_VOLUME / 2.0};
+  float m_volume{c_max_volume / 2.0f};
   bool m_show_settings{false};
+
+  // Audio: streamed to the client instead of played on the server.
+  SoundCommandSender m_sound;
 };
 
 int main() {
