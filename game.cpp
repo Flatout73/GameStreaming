@@ -28,6 +28,9 @@ class MyGame : public vve::System {
   static constexpr int c_grid_y = 41;           // cells south-north
   static constexpr float c_cell = 1.0f;         // world units per cell
   static constexpr int c_init_len = 3;
+  static constexpr int c_seg_warm_margin = 16;   // keep the body pool this many
+                                                 // segments ahead of the snake
+  static constexpr int c_seg_warm_per_frame = 2; // segments pre-created / frame
   static constexpr int c_num_stones = 26;       // same density as 12 on 21x21
   static constexpr int c_num_fruits = 7;        // fruits on the field at once
   static constexpr float c_step_time0 = 0.16f;  // seconds per grid step
@@ -143,14 +146,6 @@ public:
     auto msg = message.template GetData<vve::System::MsgLoadLevel>();
     std::cout << "Loading level: " << msg.m_level << std::endl;
 
-    // ground: cobblestone is 14.3 x 25.2 units, off-center; at scale 2 and
-    // this position it is centered under the field with cobble tops at z~0
-    m_engine.CreateScene(
-        vve::Name{}, vve::ParentHandle{},
-        vve::Filename{"assets/test/cobblestone/Stone_ground_01.obj"},
-        aiProcess_Triangulate, vve::Position{vec3_t{0.31f, -5.85f, -1.24f}},
-        vve::Rotation{mat3_t{1.0f}}, vve::Scale{vec3_t{2.0f, 2.0f, 2.0f}});
-
     // grass backstop below the terrain: the cobblestone mesh has ragged
     // edges and a few real holes, this fills them with ground, not sky
     m_engine.LoadScene(vve::Filename{"assets/test/plane/plane_t_n_s.obj"},
@@ -159,7 +154,7 @@ public:
         vve::Name{}, vve::ParentHandle{},
         vve::MeshName{"assets/test/plane/plane_t_n_s.obj/plane"},
         vve::TextureName{"assets/test/plane/grass.jpg"},
-        vve::Position{vec3_t{0.0f, 0.0f, -1.30f}},
+        vve::Position{vec3_t{0.0f, 0.0f, 0.0f}},
         vve::Rotation{mat3_t{glm::rotate(mat4_t{1.0f}, c_half_pi,
                                          vec3_t{1.0f, 0.0f, 0.0f})}},
         vve::Scale{vec3_t{60.0f}}, vve::UVScale{vec2_t{30.0f}});
@@ -204,7 +199,7 @@ public:
         vve::Filename{"assets/snake/snake_head.obj"}, aiProcess_Triangulate,
         vve::Position{c_park}, vve::Rotation{mat3_t{1.0f}},
         vve::Scale{vec3_t{0.95f}});
-    EnsureSegments(c_init_len - 1);
+    EnsureSegments(c_init_len - 1 + c_seg_warm_margin); // pre-warm pool at load
 
     // fruit pools: c_num_fruits instances per type, parked off-field
     for (int t = 0; t < (int)c_fruit_types.size(); t++) {
@@ -235,14 +230,27 @@ public:
 
   // ----- game state -----
 
+  vecs::Handle MakeSegment() {
+    return m_engine.CreateScene(
+        vve::Name{}, vve::ParentHandle{},
+        vve::Filename{"assets/snake/snake_body.obj"}, aiProcess_Triangulate,
+        vve::Position{c_park}, vve::Rotation{mat3_t{1.0f}},
+        vve::Scale{vec3_t{1.0f}});
+  }
+
+  // Hard guarantee: the pool holds at least n segments right now.
   void EnsureSegments(size_t n) {
-    while (m_segPool.size() < n) {
-      m_segPool.push_back(m_engine.CreateScene(
-          vve::Name{}, vve::ParentHandle{},
-          vve::Filename{"assets/snake/snake_body.obj"}, aiProcess_Triangulate,
-          vve::Position{c_park}, vve::Rotation{mat3_t{1.0f}},
-          vve::Scale{vec3_t{1.0f}}));
-    }
+    while (m_segPool.size() < n) m_segPool.push_back(MakeSegment());
+  }
+
+  // Amortized pre-warm: grow the pool a few segments per frame so eating a
+  // fruit never triggers a synchronous CreateScene mid-step. That per-instance
+  // GPU-buffer allocation is what hitched the frame on eat.
+  void WarmSegments() {
+    size_t live = m_snake.empty() ? 0 : m_snake.size() - 1;
+    size_t target = live + c_seg_warm_margin;
+    for (int i = 0; i < c_seg_warm_per_frame && m_segPool.size() < target; i++)
+      m_segPool.push_back(MakeSegment());
   }
 
   void RandomizeStones() {
@@ -438,6 +446,7 @@ public:
     auto msg = message.template GetData<vve::System::MsgUpdate>();
     float dt = std::min((float)msg.m_dt, 0.1f);
     GetCamera();
+    WarmSegments(); // keep the body pool ahead of growth (off the eat path)
 
     if (m_state == State::RUNNING) {
       m_timeLeft -= dt;
@@ -617,7 +626,14 @@ public:
   void DrawSceneInspector() {
     ImGui::SetNextWindowSize(ImVec2(360.0f, 420.0f), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowCollapsed(true, ImGuiCond_FirstUseEver); // dev tool
-    ImGui::Begin("Scene");
+    // Begin() returns false when the window is collapsed (the default) or
+    // clipped; skip the per-object scan entirely in that case. Without this
+    // the two O(objects) loops below — each allocating a std::string per
+    // object — run every frame even while the panel is closed.
+    if (!ImGui::Begin("Scene")) {
+      ImGui::End();
+      return;
+    }
 
     int count = 0;
     for (auto [handle, pos] :

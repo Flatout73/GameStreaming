@@ -98,10 +98,6 @@ private:
   std::chrono::steady_clock::time_point m_lastReportPoll{};
 
   static constexpr int c_fps = 30;
-  static constexpr int c_bitrateSwitchFrame =
-      999999; // Disabled for direct comparison
-
-  bool m_bitrateReduced{false};
 
   bool InitEncoder(int width, int height) {
     m_codecCtx = avcodec_alloc_context3(m_codec);
@@ -265,53 +261,6 @@ private:
       return false;
     }
 
-    if (!m_bitrateReduced && m_frameIndex >= c_bitrateSwitchFrame) {
-      // Flush original codec context (Store pattern)
-      avcodec_send_frame(m_codecCtx, nullptr);
-      while (avcodec_receive_packet(m_codecCtx, m_pkt) == 0) {
-        m_pkt->pts = m_pkt->dts =
-            m_pkt->pts * m_codecCtx->time_base.den / m_codecCtx->time_base.num;
-        m_outFile.write(reinterpret_cast<const char *>(m_pkt->data),
-                        m_pkt->size);
-        // Also send via UDP
-        m_udpSender.send(reinterpret_cast<const char *>(m_pkt->data),
-                         m_pkt->size);
-        av_packet_unref(m_pkt);
-      }
-
-      avcodec_free_context(&m_codecCtx);
-      m_codecCtx = avcodec_alloc_context3(m_codec);
-      if (!m_codecCtx) {
-        std::cerr
-            << "FrameEncoder: Could not allocate replacement codec context"
-            << std::endl;
-      } else {
-        m_codecCtx->bit_rate = m_bitrateVal;
-        m_codecCtx->width = extent.width;
-        m_codecCtx->height = extent.height;
-        m_codecCtx->time_base = {1, c_fps};
-        m_codecCtx->framerate = {c_fps, 1};
-        m_codecCtx->gop_size = 30;
-        m_codecCtx->max_b_frames = 1;
-        m_codecCtx->pix_fmt = AV_PIX_FMT_YUV420P;
-
-        av_opt_set(m_codecCtx->priv_data, "preset", "ultrafast", 0);
-        av_opt_set(m_codecCtx->priv_data, "x265-params",
-                   "rc-lookahead=5:sync-lookahead=0:frame-threads=1", 0);
-
-        if (avcodec_open2(m_codecCtx, m_codec, nullptr) < 0) {
-          std::cerr
-              << "FrameEncoder: Could not reopen codec after bitrate switch"
-              << std::endl;
-          avcodec_free_context(&m_codecCtx);
-        } else {
-          m_bitrateReduced = true;
-          std::cout << "FrameEncoder: Switched bitrate to "
-                    << (m_bitrateVal / 2) << " at frame " << m_frameIndex
-                    << std::endl;
-        }
-      }
-    }
 
     while (avcodec_receive_packet(m_codecCtx, m_pkt) == 0) {
       m_pkt->pts = m_pkt->dts = m_yuvFrame->pts * m_codecCtx->time_base.den /
