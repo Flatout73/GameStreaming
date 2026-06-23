@@ -7,6 +7,7 @@
 #include <iostream>
 #include <utility>
 
+#include "event_receiver.cpp"
 #include "frame_encoder.cpp"
 
 class MyGame : public vve::System {
@@ -175,7 +176,79 @@ public:
       }
       ImGui::End();
     }
+
+    DrawSceneInspector();
     return false;
+  }
+
+  // Scene inspector: lists every object, shows its name/type/position,
+  // and exposes a color picker for lights
+  void DrawSceneInspector() {
+    ImGui::SetNextWindowSize(ImVec2(360.0f, 420.0f), ImGuiCond_FirstUseEver);
+    ImGui::Begin("Scene");
+
+    int count = 0;
+    for (auto [handle, pos] :
+         m_registry.GetView<vecs::Handle, vve::Position &>()) {
+      ++count;
+    }
+    ImGui::Text("Objects in scene: %d", count);
+    ImGui::Separator();
+
+    int idx = 0;
+    for (auto [handle, pos] :
+         m_registry.GetView<vecs::Handle, vve::Position &>()) {
+      ImGui::PushID(idx++);
+
+      std::string name = "(unnamed)";
+      if (m_registry.Has<vve::Name>(handle)) {
+        std::string n = m_registry.Get<vve::Name &>(handle)();
+        if (!n.empty())
+          name = n;
+      }
+
+      const char *type = "Object";
+      int lightKind = 0; // 0=none, 1=point, 2=directional, 3=spot
+      if (m_registry.Has<vve::Camera>(handle)) {
+        type = "Camera";
+      } else if (m_registry.Has<vve::PointLight>(handle)) {
+        type = "PointLight";
+        lightKind = 1;
+      } else if (m_registry.Has<vve::DirectionalLight>(handle)) {
+        type = "DirectionalLight";
+        lightKind = 2;
+      } else if (m_registry.Has<vve::SpotLight>(handle)) {
+        type = "SpotLight";
+        lightKind = 3;
+      } else if (m_registry.Has<vve::Children>(handle)) {
+        type = "Node";
+      }
+
+      vec3_t p = pos();
+      if (ImGui::TreeNode("node", "%s  [%s]", name.c_str(), type)) {
+        ImGui::Text("Position: %.2f, %.2f, %.2f", p.x, p.y, p.z);
+
+        if (lightKind != 0) {
+          vvh::LightParams *params = nullptr;
+          if (lightKind == 1)
+            params = &m_registry.Get<vve::PointLight &>(handle)();
+          else if (lightKind == 2)
+            params = &m_registry.Get<vve::DirectionalLight &>(handle)();
+          else
+            params = &m_registry.Get<vve::SpotLight &>(handle)();
+
+          glm::vec3 c = params->color;
+          float col[3] = {c.r, c.g, c.b};
+          if (ImGui::ColorEdit3("Light color", col)) {
+            params->color = glm::vec3{col[0], col[1], col[2]};
+          }
+        }
+        ImGui::TreePop();
+      }
+      ImGui::PopID();
+    }
+
+    ImGui::End();
   }
 
 private:
@@ -194,6 +267,7 @@ int main() {
   vve::Engine engine("My Engine", vve::RendererType::RENDERER_TYPE_FORWARD);
   MyGame mygui{engine};
   FrameEncoder encoder{engine};
+  EventReceiver eventReceiver{engine};
   engine.Run();
 
   return 0;
