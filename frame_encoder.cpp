@@ -113,15 +113,19 @@ private:
     m_codecCtx->time_base = {1, c_fps};
     m_codecCtx->framerate = {c_fps, 1};
     m_codecCtx->gop_size = 10;
-    m_codecCtx->max_b_frames = 1;
+    m_codecCtx->max_b_frames = 0; // no B-frames -> no encode/decode reorder delay
     m_codecCtx->pix_fmt = AV_PIX_FMT_YUV420P;
 
-    // Low-latency: ultrafast preset + minimal lookahead
-    // Note: tune=zerolatency forces bframes=0,
-    // so we set the params manually
+    // Low latency: no B-frames, no rate-control lookahead, no frame-threading
+    // (each adds a multi-frame buffer before the first packet is emitted).
     av_opt_set(m_codecCtx->priv_data, "preset", "ultrafast", 0);
-    av_opt_set(m_codecCtx->priv_data, "x265-params",
-               "rc-lookahead=5:sync-lookahead=0:frame-threads=1", 0);
+    if (m_codecName == "hevc" || m_codecName == "h265") {
+      av_opt_set(m_codecCtx->priv_data, "x265-params",
+                 "bframes=0:rc-lookahead=0:sync-lookahead=0:frame-threads=1", 0);
+    } else {
+      // x264: zerolatency tune disables B-frames and lookahead.
+      av_opt_set(m_codecCtx->priv_data, "tune", "zerolatency", 0);
+    }
 
     if (avcodec_open2(m_codecCtx, m_codec, nullptr) < 0) {
       std::cerr << "FrameEncoder: could not open codec" << std::endl;
