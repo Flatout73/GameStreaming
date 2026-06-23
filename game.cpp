@@ -16,10 +16,6 @@
 #include "event_receiver.cpp"
 #include "frame_encoder.cpp"
 
-// Snake 3D — classic grid snake on the XY plane with 3D graphics and a
-// Snake III (2005) style chase camera behind the snake's head.
-// Fruits grow the snake and score points; stones and the border wall as
-// well as the snake itself are lethal; the countdown timer ends the game.
 class MyGame : public vve::System {
 
   enum class State : int { RUNNING, DEAD };
@@ -143,26 +139,6 @@ public:
 
   // ----- level construction -----
 
-  // Rock1.obj ships a hidden untextured 12x12 "Plane" quad next to the rock
-  // mesh; remove that child from every instantiated rock scene.
-  void DestroyChildrenNamed(vecs::Handle root, const std::string &needle) {
-    std::vector<vecs::Handle> doomed;
-    std::function<void(vecs::Handle)> dfs = [&](vecs::Handle h) {
-      if (!m_registry.Has<vve::Children>(h)) return;
-      for (auto child : m_registry.Get<vve::Children &>(h)()) {
-        std::string name;
-        if (m_registry.Has<vve::Name>(child))
-          name = m_registry.Get<vve::Name &>(child)();
-        if (name.find(needle) != std::string::npos)
-          doomed.push_back(child);
-        else
-          dfs(child);
-      }
-    };
-    dfs(root);
-    for (auto h : doomed) m_engine.DestroyObject(vve::ObjectHandle{h});
-  }
-
   bool OnLoadLevel(Message message) {
     auto msg = message.template GetData<vve::System::MsgLoadLevel>();
     std::cout << "Loading level: " << msg.m_level << std::endl;
@@ -219,7 +195,6 @@ public:
           vve::Filename{"assets/test/box/Rock1.obj"}, aiProcess_Triangulate,
           vve::Position{c_park}, vve::Rotation{upright},
           vve::Scale{vec3_t{0.3f}});
-      DestroyChildrenNamed(handle, "Plane");
       m_stoneHandles.push_back(handle);
     }
 

@@ -6,7 +6,8 @@
 ._*
 
 # Custom folder icons
-Icon
+Icon
+
 
 # Volume root files
 .DocumentRevisions-V100
@@ -34,7 +35,6 @@ Icon
 ### C
 # Object files
 *.o
-*.obj
 *.elf
 
 # Precompiled Headers
@@ -68,7 +68,6 @@ Icon
 ### C++
 # Object files
 *.o
-*.obj
 
 # Precompiled Headers
 *.gch
