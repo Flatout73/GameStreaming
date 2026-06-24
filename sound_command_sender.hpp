@@ -60,9 +60,6 @@ public:
 
   void stop() {
     {
-      // Mutate m_running while holding m_mx so the store can't interleave with
-      // the worker registering on the condition variable (a lost wakeup would
-      // otherwise stall shutdown by up to one heartbeat).
       std::lock_guard<std::mutex> lk(m_mx);
       if (!m_running.exchange(false))
         return;

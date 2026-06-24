@@ -12,6 +12,10 @@ Check branches for each tasks.
 ## Snake
 
 Not it is fully playable snake game in 3D. Sound is played locally on the client. Server just send commands what to play.
+I disabled B-frames for the low latency.
+
+Video about the game:
+https://youtu.be/Tv2sTVwew-4
 
 ## Event dispatcher
 

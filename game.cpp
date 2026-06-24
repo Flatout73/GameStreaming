@@ -15,7 +15,7 @@
 
 #include "event_receiver.cpp"
 #include "frame_encoder.cpp"
-#include "sound_command_sender.h"
+#include "sound_command_sender.hpp"
 
 class MyGame : public vve::System {
 
